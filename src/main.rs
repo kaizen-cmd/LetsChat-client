@@ -1,98 +1,108 @@
+use core::str;
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::sync::mpsc::Receiver;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
-// use iced::widget::{column, Button, TextInput};
-// use iced::Element;
+use iced::widget::{column, text, text_input};
+use iced::{Element, Subscription};
 
-// #[derive(Debug, Clone)]
-// enum Message {
-//     NameChanged(String),
-//     RoomIdChanged(String),
-//     SubmitCredsFrom,
-// }
+struct Client {
+    tcp_stream: TcpStream,
+    name: String,
+    room_id: String,
+    messages: Arc<Mutex<Vec<String>>>,
+    current_message: String,
+    receiver: Receiver<String>
+}
 
-// struct Client {
-//     name: String,
-//     room_id: String,
-// }
+impl Client {
+    fn create() -> Self {
 
-// impl Default for Client {
-//     fn default() -> Self {
-//         Self {
-//             name: "Anonymous".to_string(),
-//             room_id: "1".to_string(),
-//         }
-//     }
-// }
+        let (sx, rx) = std::sync::mpsc::channel();
+        let tcp_stream = TcpStream::connect("localhost:8000").expect("Failed to connect to server");
 
-// impl Client {
+        let mut tcp_stream_clone = tcp_stream.try_clone().unwrap();
+        let sender_clone = sx.clone();
 
-//     fn update(&mut self, message: Message) {
-//         match message {
-//             Message::NameChanged(name) => {
-//                 self.name = name;
-//             }
-//             Message::RoomIdChanged(room_id) => {
-//                 self.room_id = room_id;
-//             }
-//             Message::SubmitCredsFrom => {
-//             }
-//         }
-//     }
+        thread::spawn(move || {
+            loop {
+                let mut buf = [0u8; 1024];
+                let bytes_read = tcp_stream_clone.read(&mut buf).unwrap();
+                if bytes_read == 0 {
+                    break;
+                }
+                let message = str::from_utf8(&buf[..bytes_read]).unwrap();
+                sender_clone.send(message.to_string()).unwrap();
+            }
+        }); 
 
-//     fn view(&self) -> Element<Message> {
-//         let name_ip_field = TextInput::new("What is your name?", &self.name)
-//             .on_input(Message::NameChanged);
+        let client = Client {
+            tcp_stream: tcp_stream.try_clone().unwrap(),
+            name: String::new(),
+            room_id: String::new(),
+            messages: Arc::new(Mutex::new(Vec::new())),
+            current_message: String::new(),
+            receiver: rx
+        };
 
-//         let room_id_ip_field = TextInput::new("What is your room id?", &self.room_id)
-//             .on_input(Message::RoomIdChanged);
+        client
+    }
 
-//         let submit_btn = Button::new("Submit")
-//             .on_press(Message::SubmitCredsFrom);
+    // fn subscription(&self) -> Subscription<Message> {
 
-//         let layout = column![name_ip_field, room_id_ip_field, submit_btn];
+    // }
 
-//         layout.into()
-//     }
-// }
 
+}
+
+
+impl Default for Client {
+    fn default() -> Self {
+        Self::create()
+    }
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    CurrentMessageChanged(String),
+    SendMessage(String),
+    UpdateMessages(String),
+}
+
+fn update(client: &mut Client, message: Message) {
+    match message {
+        Message::CurrentMessageChanged(msg) => {
+            client.current_message = msg;
+        }
+        Message::SendMessage(msg) => {
+            client
+                .tcp_stream
+                .write_all(msg.trim().to_string().as_bytes())
+                .expect("Failed to write to stream");
+            client.current_message.clear();
+        }
+        Message::UpdateMessages(msg) => {
+            let mut messages = client.messages.lock().unwrap();
+            messages.push(msg);
+            drop(messages);
+        }
+    }
+}
+
+
+fn view(client: &Client) -> Element<Message> {
+    let messages = client.messages.lock().unwrap();
+    let messages_string = messages.join("\n").to_string();
+    drop(messages);
+    let text = text(messages_string).size(20);
+    let text_input = text_input("Message", &client.current_message)
+        .on_input(Message::CurrentMessageChanged)
+        .on_submit(Message::SendMessage(client.current_message.clone()));
+    column![text, text_input].into()
+}
 
 fn main() {
-
-    let mut tcp_stream = TcpStream::connect("localhost:8000").expect("Failed to connect to server");
-    let mut tcp_stream_write = tcp_stream.try_clone().expect("Failed to clone stream");
-
-    let read_thread = thread::spawn(move || {
-
-        loop {
-            let mut buf = [0u8; 1024];
-            tcp_stream.read(&mut buf).unwrap();
-            if buf.is_empty() {
-                break;
-            }
-            println!("{}", std::str::from_utf8(&buf).unwrap().trim());
-        }
-    });
-
-    let write_thread = thread::spawn(move || {
-        let stdin = std::io::stdin();
-        let mut input = String::new();
-        stdin.read_line(&mut input).expect("Failed to read input");
-
-        let room_id_name = input.split(" ").collect::<Vec<&str>>();
-        let _name = room_id_name[1].to_string().trim().to_string();
-        let _room_id = room_id_name[0].to_string();
-
-        tcp_stream_write.write_all(input.as_bytes()).expect("Failed to write to stream");
-
-        loop {
-            let mut input = String::new();
-            stdin.read_line(&mut input).expect("Failed to read input");
-            tcp_stream_write.write_all(input.as_bytes()).expect("Failed to write to stream");
-        }
-    });
-
-    read_thread.join().unwrap();
-    write_thread.join().unwrap();
+    let _ = iced::application("ChatClient", update, view);
 }
