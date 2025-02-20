@@ -1,108 +1,61 @@
-use core::str;
-use std::io::{Read, Write};
-use std::net::TcpStream;
-use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Mutex};
-use std::thread;
+mod chat_screen;
+mod welcome_screen;
 
-use iced::widget::{column, text, text_input};
-use iced::{Element, Subscription};
+use chat_screen::chat;
+use iced::Element;
+use welcome_screen::welcome;
 
-struct Client {
-    tcp_stream: TcpStream,
-    name: String,
-    room_id: String,
-    messages: Arc<Mutex<Vec<String>>>,
-    current_message: String,
-    receiver: Receiver<String>
+enum Screen {
+    WelcomeScreen(welcome::Client),
+    ChatScreen(chat::Client),
 }
 
-impl Client {
-    fn create() -> Self {
-
-        let (sx, rx) = std::sync::mpsc::channel();
-        let tcp_stream = TcpStream::connect("localhost:8000").expect("Failed to connect to server");
-
-        let mut tcp_stream_clone = tcp_stream.try_clone().unwrap();
-        let sender_clone = sx.clone();
-
-        thread::spawn(move || {
-            loop {
-                let mut buf = [0u8; 1024];
-                let bytes_read = tcp_stream_clone.read(&mut buf).unwrap();
-                if bytes_read == 0 {
-                    break;
-                }
-                let message = str::from_utf8(&buf[..bytes_read]).unwrap();
-                sender_clone.send(message.to_string()).unwrap();
-            }
-        }); 
-
-        let client = Client {
-            tcp_stream: tcp_stream.try_clone().unwrap(),
-            name: String::new(),
-            room_id: String::new(),
-            messages: Arc::new(Mutex::new(Vec::new())),
-            current_message: String::new(),
-            receiver: rx
-        };
-
-        client
-    }
-
-    // fn subscription(&self) -> Subscription<Message> {
-
-    // }
-
-
+struct ScreenState {
+    screen: Screen,
 }
 
-
-impl Default for Client {
+impl Default for ScreenState {
     fn default() -> Self {
-        Self::create()
+        ScreenState {
+            screen: Screen::WelcomeScreen(welcome::Client::default()),
+        }
     }
 }
 
-#[derive(Debug, Clone)]
-enum Message {
-    CurrentMessageChanged(String),
-    SendMessage(String),
-    UpdateMessages(String),
+#[derive(Clone, Debug)]
+enum EventMessage {
+    WelcomeMessage(welcome::Message),
+    ChatMessage(chat::Message),
 }
 
-fn update(client: &mut Client, message: Message) {
+fn update(screen_state: &mut ScreenState, message: EventMessage) {
     match message {
-        Message::CurrentMessageChanged(msg) => {
-            client.current_message = msg;
+        EventMessage::WelcomeMessage(m) => {
+            if let Screen::WelcomeScreen(s) = &mut screen_state.screen {
+                let action = s.update(m);
+                match action {
+                    welcome::Action::None => {}
+                    welcome::Action::Connected => {
+                        screen_state.screen = Screen::ChatScreen(chat::Client::default());
+                    }
+                }
+            }
         }
-        Message::SendMessage(msg) => {
-            client
-                .tcp_stream
-                .write_all(msg.trim().to_string().as_bytes())
-                .expect("Failed to write to stream");
-            client.current_message.clear();
-        }
-        Message::UpdateMessages(msg) => {
-            let mut messages = client.messages.lock().unwrap();
-            messages.push(msg);
-            drop(messages);
+        EventMessage::ChatMessage(m) => {
+            if let Screen::ChatScreen(s) = &mut screen_state.screen {
+                s.update(m);
+            }
         }
     }
 }
 
-
-fn view(client: &Client) -> Element<Message> {
-    let messages = client.messages.lock().unwrap();
-    let messages_string = messages.join("\n").to_string();
-    drop(messages);
-    let text = text(messages_string).size(20);
-    let text_input = text_input("Message", &client.current_message)
-        .on_input(Message::CurrentMessageChanged)
-        .on_submit(Message::SendMessage(client.current_message.clone()));
-    column![text, text_input].into()
+fn view(screen_state: &ScreenState) -> Element<EventMessage> {
+    match &screen_state.screen {
+        Screen::ChatScreen(client) => client.view().map(EventMessage::ChatMessage),
+        Screen::WelcomeScreen(client) => client.view().map(EventMessage::WelcomeMessage),
+    }
 }
 
 fn main() {
-    let _ = iced::application("ChatClient", update, view);
+    let _ = iced::run("Chat Client", update, view).unwrap();
 }
