@@ -1802,17 +1802,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mio"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2886843bf800fba2e3377cff24abf6379b4c4d5c6681eaf9ea5b0d15090450bd"
-dependencies = [
- "libc",
- "wasi 0.11.0+wasi-snapshot-preview1",
- "windows-sys 0.52.0",
-]
-
-[[package]]
 name = "naga"
 version = "0.19.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2846,16 +2835,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "socket2"
-version = "0.5.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c970269d99b64e60ec3bd6ad27270092a5394c4e309314b18ae3fe575695fbe8"
-dependencies = [
- "libc",
- "windows-sys 0.52.0",
-]
-
-[[package]]
 name = "softbuffer"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3060,15 +3039,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d61fa4ffa3de412bfea335c6ecff681de2b609ba3c77ef3e00e521813a9ed9e"
 dependencies = [
  "backtrace",
- "bytes",
- "libc",
- "mio",
- "parking_lot 0.12.3",
  "pin-project-lite",
- "signal-hook-registry",
- "socket2",
  "tokio-macros",
- "windows-sys 0.52.0",
 ]
 
 [[package]]
