@@ -1,8 +1,6 @@
 use core::str;
 use std::{
-    io::{Read, Write},
-    net::TcpStream,
-    sync::Arc,
+    io::{Read, Write}, net::TcpStream, process::exit, sync::Arc
 };
 
 use iced::{
@@ -74,8 +72,8 @@ fn update(app_state: &mut AppState, message: Message) {
             let mut tcp_stream = tcp_stream_locked.try_clone().unwrap();
             drop(tcp_stream_locked);
             tokio::spawn(async move {
+                println!("Reader Thread started");
                 loop {
-                    println!("Reader Thread started");
                     let mut buf = [0u8; 1024];
                     let bytes_read = tcp_stream.read(&mut buf).unwrap();
                     let message = str::from_utf8(&buf[..bytes_read]).unwrap();
@@ -96,6 +94,9 @@ fn update(app_state: &mut AppState, message: Message) {
             drop(tcp_stream_locked);
             let s = s.trim().to_string();
             tcp_stream.write_all(s.as_bytes()).unwrap();
+            {
+                app_state.messages.lock().unwrap().push(format!("You > {}", s));
+            }
             app_state.current_message.clear();
         }
         Message::CurrentMessageChanged(s) => {
@@ -130,4 +131,5 @@ async fn main() {
         .subscription(subscription)
         .run()
         .unwrap();
+    exit(0);
 }
