@@ -1,15 +1,9 @@
 mod chat;
 mod welcome;
 
-use std::{
-    net::TcpStream,
-    sync::{LazyLock, Mutex},
-};
+use std::net::TcpStream;
 
 use iced::{Element, Subscription};
-
-static TCP_STREAM: LazyLock<Mutex<TcpStream>> =
-    LazyLock::new(|| Mutex::new(TcpStream::connect("localhost:8000").unwrap()));
 
 enum Screen {
     WelcomeScreen(welcome::WelcomeViewState),
@@ -18,12 +12,16 @@ enum Screen {
 
 pub struct AppState {
     screen: Screen,
+    tcp_stream: TcpStream,
 }
 
-impl Default for AppState {
-    fn default() -> Self {
+impl AppState {
+    pub fn new(tcp_stream: TcpStream) -> Self {
         AppState {
-            screen: Screen::WelcomeScreen(welcome::WelcomeViewState::new()),
+            screen: Screen::WelcomeScreen(welcome::WelcomeViewState::new(
+                tcp_stream.try_clone().unwrap(),
+            )),
+            tcp_stream,
         }
     }
 }
@@ -45,6 +43,7 @@ pub fn update(app_state: &mut AppState, message: AppMessage) {
                             vec![success_message],
                             username,
                             room_id,
+                            app_state.tcp_stream.try_clone().unwrap(),
                         ));
                     }
                     welcome::WelcomeViewAction::None => {}
@@ -58,7 +57,6 @@ pub fn update(app_state: &mut AppState, message: AppMessage) {
                     chat::ChatViewAction::None => {}
                     chat::ChatViewAction::Disconnect => {
                         // restart app
-                        
                     }
                 }
             }

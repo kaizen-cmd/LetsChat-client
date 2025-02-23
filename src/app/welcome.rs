@@ -1,6 +1,5 @@
-use crate::app::TCP_STREAM;
-
 use std::io::{Read, Write};
+use std::net::TcpStream;
 
 use iced::widget::{button, column, text, text_input};
 use iced::Element;
@@ -9,21 +8,20 @@ pub struct WelcomeViewState {
     welcome_message: String,
     room_id_text: String,
     name_text: String,
+    tcp_stream: TcpStream,
 }
 
 impl WelcomeViewState {
-    pub fn new() -> Self {
+    pub fn new(tcp_stream: TcpStream) -> Self {
         let mut welcome_view_state = WelcomeViewState {
             welcome_message: String::from("Connecting.."),
             room_id_text: String::new(),
             name_text: String::new(),
+            tcp_stream,
         };
 
-        let tcp_stream_locked = TCP_STREAM.lock().unwrap();
-        let mut tcp_stream = tcp_stream_locked.try_clone().unwrap();
-        drop(tcp_stream_locked);
         let mut buf = [0u8; 1024];
-        let bytes_read = tcp_stream.read(&mut buf).unwrap();
+        let bytes_read = welcome_view_state.tcp_stream.read(&mut buf).unwrap();
         let message = std::str::from_utf8(&buf[..bytes_read]).unwrap();
         welcome_view_state.welcome_message = message.to_string();
 
@@ -59,18 +57,17 @@ pub fn welcome_view_update(
             WelcomeViewAction::None
         }
         WelcomeViewMessage::SbmitForm => {
-            let tcp_stream_locked = TCP_STREAM.lock().unwrap();
-            let mut tcp_stream = tcp_stream_locked.try_clone().unwrap();
-            drop(tcp_stream_locked);
-
             let message = format!(
                 "{} {}",
                 welcome_view_state.room_id_text, welcome_view_state.name_text
             );
-            tcp_stream.write_all(message.as_bytes()).unwrap();
+            welcome_view_state
+                .tcp_stream
+                .write_all(message.as_bytes())
+                .unwrap();
 
             let mut buf = [0u8; 1024];
-            let bytes_read = tcp_stream.read(&mut buf).unwrap();
+            let bytes_read = welcome_view_state.tcp_stream.read(&mut buf).unwrap();
             let message = std::str::from_utf8(&buf[..bytes_read]).unwrap();
             if message.contains("Room ID") {
                 return WelcomeViewAction::RoomJoined(

@@ -1,13 +1,15 @@
-use crate::app::TCP_STREAM;
-
 use core::str;
 use std::{
     io::{Read, Write},
+    net::TcpStream,
     sync::Arc,
 };
 
 use iced::{
-    futures::{SinkExt, Stream, StreamExt}, stream, theme, widget::{button, column, container, scrollable, text, text_input, Column, Row}, Color, Element, Length, Theme
+    futures::{SinkExt, Stream, StreamExt},
+    stream, theme,
+    widget::{button, column, container, scrollable, text, text_input, Column, Row},
+    Color, Element, Length, Theme,
 };
 
 use std::sync::Mutex;
@@ -17,16 +19,23 @@ pub struct ChatViewState {
     room_id: String,
     messages: Arc<Mutex<Vec<String>>>,
     current_message: String,
+    tcp_stream: TcpStream,
 }
 
 impl ChatViewState {
-    pub fn new(mut messages: Vec<String>, name: String, room_id: String) -> Self {
+    pub fn new(
+        mut messages: Vec<String>,
+        name: String,
+        room_id: String,
+        tcp_stream: TcpStream,
+    ) -> Self {
         messages.push(format!("\nYou have joined as {}", name).to_string());
         ChatViewState {
             name,
             room_id,
             messages: Arc::new(Mutex::new(messages)),
             current_message: String::new(),
+            tcp_stream,
         }
     }
 }
@@ -49,9 +58,7 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
     match message {
         ChatViewMessage::StartReader(mut sx) => {
             println!("Message::StartReader received");
-            let tcp_stream_locked = TCP_STREAM.lock().unwrap();
-            let mut tcp_stream = tcp_stream_locked.try_clone().unwrap();
-            drop(tcp_stream_locked);
+            let mut tcp_stream = app_state.tcp_stream.try_clone().unwrap();
             tokio::spawn(async move {
                 loop {
                     let mut buf = [0u8; 1024];
@@ -69,9 +76,7 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
             ChatViewAction::None
         }
         ChatViewMessage::SendMessage(s) => {
-            let tcp_stream_locked = TCP_STREAM.lock().unwrap();
-            let mut tcp_stream = tcp_stream_locked.try_clone().unwrap();
-            drop(tcp_stream_locked);
+            let mut tcp_stream = app_state.tcp_stream.try_clone().unwrap();
             let s = s.trim().to_string();
             tcp_stream.write_all(s.as_bytes()).unwrap();
             {
@@ -89,12 +94,10 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
             ChatViewAction::None
         }
         ChatViewMessage::Disconnect => {
-            let tcp_stream_locked = TCP_STREAM.lock().unwrap();
-            let tcp_stream = tcp_stream_locked.try_clone().unwrap();
-            drop(tcp_stream_locked);
+            let tcp_stream = app_state.tcp_stream.try_clone().unwrap();
             match tcp_stream.shutdown(std::net::Shutdown::Both) {
                 Ok(_) => {}
-                Err(e) => println!("Shutdown failed {}", e)
+                Err(e) => println!("Shutdown failed {}", e),
             };
             ChatViewAction::Disconnect
         }
@@ -150,7 +153,9 @@ pub fn view(app_state: &ChatViewState) -> Element<ChatViewMessage> {
         .height(Length::Shrink)
         .into();
 
-    let disconnect_btn: Element<ChatViewMessage> = button("Disconnect Room").on_press(ChatViewMessage::Disconnect).into();
+    let disconnect_btn: Element<ChatViewMessage> = button("Disconnect Room")
+        .on_press(ChatViewMessage::Disconnect)
+        .into();
 
     column![
         disconnect_btn,
