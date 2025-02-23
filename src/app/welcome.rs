@@ -85,7 +85,7 @@ pub fn welcome_view_update(
 
 
 pub fn welcome_view(welcome_view_state: &WelcomeViewState) -> Element<WelcomeViewMessage> {
-    let title: Element<WelcomeViewMessage> = text("LetChat!")
+    let title: Element<WelcomeViewMessage> = text("LetsChat!")
         .size(30)
         .align_x(alignment::Horizontal::Center)
         .into();

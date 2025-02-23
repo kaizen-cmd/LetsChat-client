@@ -1,25 +1,111 @@
 use core::str;
 use std::{
+    collections::HashMap,
     io::{Read, Write},
     net::TcpStream,
     sync::Arc,
 };
 
 use iced::{
-    futures::{stream::FusedStream, SinkExt, Stream, StreamExt},
-    stream, theme,
-    widget::{button, column, container, scrollable, text, text_input, Column, Row},
-    Color, Element, Length, Theme,
+    alignment, futures::{stream::FusedStream, SinkExt, Stream, StreamExt}, stream, widget::{button, column, container, scrollable, text, text_input, Column, Row}, Color, Element, Font, Length
 };
 
 use std::sync::Mutex;
 
+struct ConversationMessage {
+    name: String,
+    color: Color,
+    content: String,
+}
+
+struct ConversationMessageManager {
+    colors_list: Vec<Color>,
+    current_index: usize,
+    color_user_map: HashMap<String, Color>,
+}
+
+impl ConversationMessageManager {
+    fn new() -> Self {
+        ConversationMessageManager {
+            colors_list: vec![
+                Color::new(0.1, 0.3, 0.6, 1.0), // Soft Blue
+                Color::new(0.2, 0.5, 0.3, 1.0), // Muted Green
+                Color::new(0.6, 0.3, 0.1, 1.0), // Warm Brown
+                Color::new(0.5, 0.2, 0.4, 1.0), // Gentle Purple
+                Color::new(0.7, 0.5, 0.2, 1.0), // Soft Mustard
+                Color::new(0.2, 0.6, 0.5, 1.0), // Teal Green
+                Color::new(0.8, 0.3, 0.3, 1.0), // Soft Red
+                Color::new(0.3, 0.7, 0.4, 1.0), // Fresh Green
+                Color::new(0.4, 0.4, 0.7, 1.0), // Cool Blue
+                Color::new(0.7, 0.4, 0.6, 1.0), // Soft Magenta
+                Color::new(0.3, 0.6, 0.7, 1.0), // Aqua Blue
+                Color::new(0.6, 0.7, 0.3, 1.0), // Olive Green
+                Color::new(0.5, 0.3, 0.7, 1.0), // Lavender
+                Color::new(0.2, 0.4, 0.7, 1.0), // Deep Sky Blue
+                Color::new(0.7, 0.6, 0.3, 1.0), // Golden Yellow
+                Color::new(0.3, 0.7, 0.6, 1.0), // Cyan Green
+                Color::new(0.4, 0.3, 0.6, 1.0), // Slate Blue
+                Color::new(0.6, 0.4, 0.3, 1.0), // Warm Terracotta
+                Color::new(0.2, 0.5, 0.6, 1.0), // Ocean Blue
+                Color::new(0.7, 0.3, 0.5, 1.0), // Rosy Pink
+            ],
+            current_index: 0,
+            color_user_map: HashMap::new(),
+        }
+    }
+
+    fn format_conversation_message(
+        &mut self,
+        name: String,
+        content: String,
+    ) -> ConversationMessage {
+        let color = match self.color_user_map.get(&name) {
+            Some(c) => c.clone(),
+            None => {
+                self.color_user_map.insert(
+                    name.clone(),
+                    self.colors_list.get(self.current_index).unwrap().clone(),
+                );
+                let color = self.colors_list.get(self.current_index).unwrap();
+                self.current_index = (self.current_index + 1) % 20;
+                color.clone()
+            }
+        };
+        ConversationMessage {
+            name,
+            content,
+            color,
+        }
+    }
+
+    fn cms_from_vec(&mut self, v: Vec<String>) -> Vec<ConversationMessage> {
+        v.iter()
+            .map(|msg| {
+                if msg.contains(">") {
+                    let split_msg = msg.split(">").collect::<Vec<&str>>();
+                    let name = split_msg[0].trim().to_string();
+                    let message = split_msg[1..].join("").to_string();
+                    let cm = self.format_conversation_message(name, message);
+                    cm
+                } else {
+                    ConversationMessage {
+                        name: String::new(),
+                        color: Color::BLACK,
+                        content: msg.clone(),
+                    }
+                }
+            })
+            .collect::<Vec<ConversationMessage>>()
+    }
+}
+
 pub struct ChatViewState {
     name: String,
     room_id: String,
-    messages: Arc<Mutex<Vec<String>>>,
+    messages: Arc<Mutex<Vec<ConversationMessage>>>,
     current_message: String,
     tcp_stream: TcpStream,
+    conversation_messenger: ConversationMessageManager,
 }
 
 impl ChatViewState {
@@ -30,12 +116,15 @@ impl ChatViewState {
         tcp_stream: TcpStream,
     ) -> Self {
         messages.push(format!("\nYou have joined as {}", name).to_string());
+        let mut cmm = ConversationMessageManager::new();
+        let messages = cmm.cms_from_vec(messages);
         ChatViewState {
             name,
             room_id,
             messages: Arc::new(Mutex::new(messages)),
             current_message: String::new(),
             tcp_stream,
+            conversation_messenger: cmm,
         }
     }
 }
@@ -66,7 +155,7 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
                     let message = str::from_utf8(&buf[..bytes_read]).unwrap();
                     match sx.send(message.to_string()).await {
                         Ok(_) => {}
-                        Err(e) => {
+                        Err(_e) => {
                             break;
                         }
                     };
@@ -76,7 +165,22 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
         }
         ChatViewMessage::ReceivedMessage(s) => {
             let mut messages = app_state.messages.lock().unwrap();
-            messages.push(s);
+            if s.contains(">") {
+                let split_msg = s.split(">").collect::<Vec<&str>>();
+                let name = split_msg[0].trim().to_string();
+                let message = split_msg[1..].join("").to_string();
+                let cm = app_state
+                    .conversation_messenger
+                    .format_conversation_message(name, message);
+                messages.push(cm);
+            } else {
+                let cm = ConversationMessage {
+                    name: String::new(),
+                    color: Color::BLACK,
+                    content: s,
+                };
+                messages.push(cm);
+            }
             drop(messages);
             ChatViewAction::None
         }
@@ -85,11 +189,11 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
             let s = s.trim().to_string();
             tcp_stream.write_all(s.as_bytes()).unwrap();
             {
-                app_state
-                    .messages
-                    .lock()
-                    .unwrap()
-                    .push(format!("You > {}", s));
+                app_state.messages.lock().unwrap().push(
+                    app_state
+                        .conversation_messenger
+                        .format_conversation_message("You".to_string(), s),
+                );
             }
             app_state.current_message.clear();
             ChatViewAction::None
@@ -111,16 +215,31 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
 
 pub fn view(app_state: &ChatViewState) -> Element<ChatViewMessage> {
     let messages = app_state.messages.lock().unwrap();
-
+    let font_size = 17;
+    let line_height = 1.2;
     let messages_text_vec = messages
         .iter()
         .map(|msg| {
-            if msg.starts_with("You > ") {
-                text(msg.clone()).size(15).color(Color::BLACK).into()
+            if msg.name.len() != 0 {
+                if msg.name == "You" {
+                    text(format!("{}: {}", msg.name, msg.content))
+                        .color(msg.color)
+                        .size(font_size)
+                        .align_x(alignment::Horizontal::Right)
+                        .line_height(line_height)
+                        .into()
+                } else {
+                    text(format!("{}: {}", msg.name, msg.content))
+                        .color(msg.color)
+                        .size(font_size)
+                        .align_x(alignment::Horizontal::Left)
+                        .line_height(line_height)
+                        .into()
+                }
             } else {
-                text(msg.clone())
-                    .color(Color::from_rgb(255.0, 0.0, 0.0))
-                    .size(15)
+                text(format!("{}", msg.content))
+                    .color(msg.color)
+                    .size(font_size)
                     .into()
             }
         })
@@ -128,7 +247,7 @@ pub fn view(app_state: &ChatViewState) -> Element<ChatViewMessage> {
 
     drop(messages);
 
-    let messages_column: Element<ChatViewMessage> = Column::from_vec(messages_text_vec).into();
+    let messages_column: Element<ChatViewMessage> = Column::from_vec(messages_text_vec).width(Length::Fill).into();
     let scrollable_messages: Element<ChatViewMessage> = scrollable(messages_column)
         .height(Length::Fill)
         .width(Length::Fill)
@@ -163,7 +282,7 @@ pub fn view(app_state: &ChatViewState) -> Element<ChatViewMessage> {
         .into();
 
     column![
-        disconnect_btn,
+        // disconnect_btn,
         scrollable_messages,
         container(input_row).padding(10).width(Length::Fill)
     ]
