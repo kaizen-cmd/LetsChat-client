@@ -7,9 +7,7 @@ use std::{
 };
 
 use iced::{
-    futures::{SinkExt, StreamExt},
-    widget::{button, column, container, scrollable, text, text_input, Column, Row},
-    Color, Element, Length,
+    futures::{SinkExt, Stream, StreamExt}, stream, widget::{button, column, container, scrollable, text, text_input, Column, Row}, Color, Element, Length
 };
 
 use std::sync::Mutex;
@@ -21,12 +19,12 @@ pub struct ChatViewState {
     current_message: String,
 }
 
-impl Default for ChatViewState {
-    fn default() -> Self {
+impl ChatViewState {
+    pub fn new(messages: Vec<String>) -> Self {
         ChatViewState {
             name: String::new(),
             room_id: String::new(),
-            messages: Arc::new(Mutex::new(Vec::new())),
+            messages: Arc::new(Mutex::new(messages)),
             current_message: String::new(),
         }
     }
@@ -40,8 +38,12 @@ pub enum ChatViewMessage {
     CurrentMessageChanged(String),
 }
 
+pub enum ChatViewAction {
+    None,
+    Disconnect
+}
 
-fn update(app_state: &mut ChatViewState, message: ChatViewMessage) {
+pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatViewAction {
     match message {
         ChatViewMessage::StartReader(mut sx) => {
             println!("Message::StartReader received");
@@ -59,11 +61,13 @@ fn update(app_state: &mut ChatViewState, message: ChatViewMessage) {
                     println!("Reader Thread Message sent to the mpsc channel");
                 }
             });
+            ChatViewAction::None
         }
         ChatViewMessage::ReceivedMessage(s) => {
             let mut messages = app_state.messages.lock().unwrap();
             messages.push(s);
             drop(messages);
+            ChatViewAction::None
         }
         ChatViewMessage::SendMessage(s) => {
             let tcp_stream_locked = TCP_STREAM.lock().unwrap();
@@ -79,9 +83,11 @@ fn update(app_state: &mut ChatViewState, message: ChatViewMessage) {
                     .push(format!("You > {}", s));
             }
             app_state.current_message.clear();
+            ChatViewAction::None
         }
         ChatViewMessage::CurrentMessageChanged(s) => {
             app_state.current_message = s;
+            ChatViewAction::None
         }
     }
 }
@@ -145,3 +151,20 @@ pub fn view(app_state: &ChatViewState) -> Element<ChatViewMessage> {
     .into()
 }
 
+
+pub fn recv_updates() -> impl Stream<Item = ChatViewMessage> {
+    println!("Subscription running for chat screen");
+    stream::channel(100, |mut op| async move {
+        println!("Started stream channel insided subscription");
+        let (sx, mut rx) = iced::futures::channel::mpsc::channel(100);
+        println!("Created mpsc channel");
+        op.send(ChatViewMessage::StartReader(sx)).await.unwrap();
+        println!("Sent sender by Message::StartReader");
+
+        loop {
+            let message = rx.select_next_some().await;
+            op.send(ChatViewMessage::ReceivedMessage(message)).await.unwrap();
+        }
+
+    })
+}

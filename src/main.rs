@@ -8,6 +8,7 @@ mod app;
 async fn main() {
     iced::application("LetsChat", app::update, app::view)
         .theme(|_m| Theme::KanagawaLotus)
+        .subscription(app::subscription)
         .run()
         .unwrap();
     exit(0);
