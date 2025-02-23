@@ -7,7 +7,7 @@ use std::{
 };
 
 use iced::{
-    futures::{SinkExt, Stream, StreamExt}, stream, widget::{button, column, container, scrollable, text, text_input, Column, Row}, Color, Element, Length
+    futures::{SinkExt, Stream, StreamExt}, stream, theme, widget::{button, column, container, scrollable, text, text_input, Column, Row}, Color, Element, Length, Theme
 };
 
 use std::sync::Mutex;
@@ -20,10 +20,11 @@ pub struct ChatViewState {
 }
 
 impl ChatViewState {
-    pub fn new(messages: Vec<String>) -> Self {
+    pub fn new(mut messages: Vec<String>, name: String, room_id: String) -> Self {
+        messages.push(format!("\nYou have joined as {}", name).to_string());
         ChatViewState {
-            name: String::new(),
-            room_id: String::new(),
+            name,
+            room_id,
             messages: Arc::new(Mutex::new(messages)),
             current_message: String::new(),
         }
@@ -36,11 +37,12 @@ pub enum ChatViewMessage {
     ReceivedMessage(String),
     SendMessage(String),
     CurrentMessageChanged(String),
+    Disconnect,
 }
 
 pub enum ChatViewAction {
     None,
-    Disconnect
+    Disconnect,
 }
 
 pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatViewAction {
@@ -51,14 +53,11 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
             let mut tcp_stream = tcp_stream_locked.try_clone().unwrap();
             drop(tcp_stream_locked);
             tokio::spawn(async move {
-                println!("Reader Thread started");
                 loop {
                     let mut buf = [0u8; 1024];
                     let bytes_read = tcp_stream.read(&mut buf).unwrap();
                     let message = str::from_utf8(&buf[..bytes_read]).unwrap();
-                    println!("Reader Thread Message Received");
                     sx.send(message.to_string()).await.unwrap();
-                    println!("Reader Thread Message sent to the mpsc channel");
                 }
             });
             ChatViewAction::None
@@ -88,6 +87,16 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
         ChatViewMessage::CurrentMessageChanged(s) => {
             app_state.current_message = s;
             ChatViewAction::None
+        }
+        ChatViewMessage::Disconnect => {
+            let tcp_stream_locked = TCP_STREAM.lock().unwrap();
+            let tcp_stream = tcp_stream_locked.try_clone().unwrap();
+            drop(tcp_stream_locked);
+            match tcp_stream.shutdown(std::net::Shutdown::Both) {
+                Ok(_) => {}
+                Err(e) => println!("Shutdown failed {}", e)
+            };
+            ChatViewAction::Disconnect
         }
     }
 }
@@ -141,7 +150,10 @@ pub fn view(app_state: &ChatViewState) -> Element<ChatViewMessage> {
         .height(Length::Shrink)
         .into();
 
+    let disconnect_btn: Element<ChatViewMessage> = button("Disconnect Room").on_press(ChatViewMessage::Disconnect).into();
+
     column![
+        disconnect_btn,
         scrollable_messages,
         container(input_row).padding(10).width(Length::Fill)
     ]
@@ -151,20 +163,15 @@ pub fn view(app_state: &ChatViewState) -> Element<ChatViewMessage> {
     .into()
 }
 
-
 pub fn recv_updates() -> impl Stream<Item = ChatViewMessage> {
-    println!("Subscription running for chat screen");
     stream::channel(100, |mut op| async move {
-        println!("Started stream channel insided subscription");
         let (sx, mut rx) = iced::futures::channel::mpsc::channel(100);
-        println!("Created mpsc channel");
         op.send(ChatViewMessage::StartReader(sx)).await.unwrap();
-        println!("Sent sender by Message::StartReader");
-
         loop {
             let message = rx.select_next_some().await;
-            op.send(ChatViewMessage::ReceivedMessage(message)).await.unwrap();
+            op.send(ChatViewMessage::ReceivedMessage(message))
+                .await
+                .unwrap();
         }
-
     })
 }
