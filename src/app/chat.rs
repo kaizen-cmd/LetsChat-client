@@ -6,7 +6,7 @@ use std::{
 };
 
 use iced::{
-    futures::{SinkExt, Stream, StreamExt},
+    futures::{stream::FusedStream, SinkExt, Stream, StreamExt},
     stream, theme,
     widget::{button, column, container, scrollable, text, text_input, Column, Row},
     Color, Element, Length, Theme,
@@ -64,7 +64,12 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
                     let mut buf = [0u8; 1024];
                     let bytes_read = tcp_stream.read(&mut buf).unwrap();
                     let message = str::from_utf8(&buf[..bytes_read]).unwrap();
-                    sx.send(message.to_string()).await.unwrap();
+                    match sx.send(message.to_string()).await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            break;
+                        }
+                    };
                 }
             });
             ChatViewAction::None
@@ -171,8 +176,13 @@ pub fn view(app_state: &ChatViewState) -> Element<ChatViewMessage> {
 pub fn recv_updates() -> impl Stream<Item = ChatViewMessage> {
     stream::channel(100, |mut op| async move {
         let (sx, mut rx) = iced::futures::channel::mpsc::channel(100);
-        op.send(ChatViewMessage::StartReader(sx)).await.unwrap();
+        op.send(ChatViewMessage::StartReader(sx.clone()))
+            .await
+            .unwrap();
         loop {
+            if sx.is_closed() || rx.is_terminated() {
+                break;
+            }
             let message = rx.select_next_some().await;
             op.send(ChatViewMessage::ReceivedMessage(message))
                 .await

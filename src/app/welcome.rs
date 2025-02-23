@@ -1,8 +1,8 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-use iced::widget::{button, column, text, text_input};
-use iced::Element;
+use iced::widget::{button, column, container, text, text_input};
+use iced::{alignment, theme, Element};
 
 pub struct WelcomeViewState {
     welcome_message: String,
@@ -83,21 +83,40 @@ pub fn welcome_view_update(
     }
 }
 
+
 pub fn welcome_view(welcome_view_state: &WelcomeViewState) -> Element<WelcomeViewMessage> {
-    let welcome_text: Element<WelcomeViewMessage> =
-        text(&welcome_view_state.welcome_message).into();
-    let name_ip: Element<WelcomeViewMessage> =
-        text_input("What is your name?", &welcome_view_state.name_text)
-            .on_input(WelcomeViewMessage::NameChanged)
-            .into();
-    let room_id_ip: Element<WelcomeViewMessage> = text_input(
-        "Which room do you want to join?",
-        &welcome_view_state.room_id_text,
-    )
-    .on_input(WelcomeViewMessage::RoomIdChanged)
-    .into();
+    let title: Element<WelcomeViewMessage> = text("LetChat!")
+        .size(30)
+        .align_x(alignment::Horizontal::Center)
+        .into();
+
+    let welcome_text: Element<WelcomeViewMessage> = text(&welcome_view_state.welcome_message)
+        .size(16)
+        .align_x(alignment::Horizontal::Center)
+        .into();
+
+    let name_ip: Element<WelcomeViewMessage> = text_input("What is your name?", &welcome_view_state.name_text)
+        .padding(10)
+        .size(16)
+        .on_input(WelcomeViewMessage::NameChanged)
+        .into();
+
+    let room_id_ip: Element<WelcomeViewMessage> = text_input("Which room do you want to join?", &welcome_view_state.room_id_text)
+        .padding(10)
+        .size(16)
+        .on_input(WelcomeViewMessage::RoomIdChanged)
+        .into();
+
     let connect_btn: Element<WelcomeViewMessage> = button("Connect")
+        .padding(12)
         .on_press(WelcomeViewMessage::SbmitForm)
         .into();
-    column![welcome_text, name_ip, room_id_ip, connect_btn].into()
+
+    let content: Element<WelcomeViewMessage> = column![title, welcome_text, name_ip, room_id_ip, connect_btn]
+        .spacing(15)
+        .align_x(iced::Alignment::Center).into();
+
+    container(content)
+        .padding(40)
+        .into()
 }
