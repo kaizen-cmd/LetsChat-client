@@ -1,6 +1,5 @@
 use std::{net::TcpStream, process::exit};
 
-use app::AppState;
 use iced::{Task, Theme};
 
 mod app;
@@ -14,6 +13,9 @@ async fn main() {
         .subscription(app::subscription)
         .run_with(|| (app_state, Task::none()))
         .unwrap();
-    tcp_stream.shutdown(std::net::Shutdown::Both).unwrap();
+    match tcp_stream.shutdown(std::net::Shutdown::Both) {
+        Ok(_) => {}
+        Err(_e) => {}
+    };
     exit(0);
 }
