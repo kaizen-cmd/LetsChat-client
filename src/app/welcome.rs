@@ -1,8 +1,9 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
+use iced::advanced::graphics::core::font;
 use iced::widget::{button, column, container, text, text_input};
-use iced::{alignment, theme, Element};
+use iced::{alignment, theme, Element, Font};
 
 pub struct WelcomeViewState {
     welcome_message: String,
@@ -85,8 +86,11 @@ pub fn welcome_view_update(
 
 
 pub fn welcome_view(welcome_view_state: &WelcomeViewState) -> Element<WelcomeViewMessage> {
+    let mut title_font = Font::with_name("clash-grotesk-variable");
+    title_font.weight = font::Weight::Semibold;
     let title: Element<WelcomeViewMessage> = text("LetsChat!")
         .size(30)
+        .font(title_font)
         .align_x(alignment::Horizontal::Center)
         .into();
 

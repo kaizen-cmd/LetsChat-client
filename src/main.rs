@@ -1,6 +1,6 @@
 use std::{net::TcpStream, process::exit};
 
-use iced::{Task, Theme};
+use iced::{Font, Task, Theme};
 
 mod app;
 
@@ -10,6 +10,8 @@ async fn main() {
     let app_state = app::AppState::new(tcp_stream.try_clone().unwrap());
     iced::application("LetsChat", app::update, app::view)
         .theme(|_m| Theme::KanagawaLotus)
+        .font(include_bytes!("./fonts/font.ttf"))
+        .default_font(Font::DEFAULT)
         .subscription(app::subscription)
         .run_with(|| (app_state, Task::none()))
         .unwrap();
