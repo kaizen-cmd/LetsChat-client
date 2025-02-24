@@ -8,11 +8,10 @@ use std::{
 
 use iced::{
     advanced::graphics::core::font,
-    border,
     futures::{stream::FusedStream, SinkExt, Stream, StreamExt},
     stream,
     widget::{button, column, container, row, scrollable, text, text_input, Column, Row},
-    Alignment, Color, Element, Font, Length,
+    Alignment, Color, Element, Font, Length, Padding,
 };
 
 use std::sync::Mutex;
@@ -137,18 +136,33 @@ pub fn view(app_state: &ChatViewState) -> Element<ChatViewMessage> {
                     .font(cm_name_font)
                     .line_height(0.6)
                     .into();
-                let message_text: Element<ChatViewMessage> = text(format!("{}", msg.content.trim()))
-                    .color(msg.color)
-                    .size(font_size + 1)
-                    .into();
+                let message_text: Element<ChatViewMessage> =
+                    text(format!("{}", msg.content.trim()))
+                        .color(msg.color)
+                        .size(font_size + 1)
+                        .into();
 
                 if msg.name == "You" {
                     column![name_text, message_text]
                         .width(Length::Fill)
                         .align_x(Alignment::End)
+                        .padding(Padding {
+                            top: 0.0,
+                            right: 20.0,
+                            bottom: 0.0,
+                            left: 20.0,
+                        })
                         .into()
                 } else {
-                    return column![name_text, message_text].width(Length::Fill).into();
+                    column![name_text, message_text]
+                        .width(Length::Fill)
+                        .padding(Padding {
+                            top: 0.0,
+                            right: 20.0,
+                            bottom: 0.0,
+                            left: 20.0,
+                        })
+                        .into()
                 }
             } else {
                 let generic_text: Element<ChatViewMessage> = text(format!("{}", msg.content))
@@ -200,7 +214,7 @@ pub fn view(app_state: &ChatViewState) -> Element<ChatViewMessage> {
         .into();
 
     column![
-        // disconnect_btn,
+        disconnect_btn,
         scrollable_messages,
         container(input_row).padding(10).width(Length::Fill)
     ]
