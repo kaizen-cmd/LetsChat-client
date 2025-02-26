@@ -1,8 +1,8 @@
+mod app;
+
 use std::{net::TcpStream, process::exit};
 
 use iced::{Font, Task, Theme};
-
-mod app;
 
 #[tokio::main]
 async fn main() {

@@ -15,6 +15,8 @@ use iced::{
 };
 
 use std::sync::Mutex;
+
+use super::security::{decrypt, encrypt};
 pub struct ChatViewState {
     name: String,
     room_id: String,
@@ -66,10 +68,18 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
             let mut tcp_stream = app_state.tcp_stream.try_clone().unwrap();
             tokio::spawn(async move {
                 loop {
+                    let key = b"thisIsASecretKey";
                     let mut buf = [0u8; 1024];
+
                     let bytes_read = tcp_stream.read(&mut buf).unwrap();
-                    let message = str::from_utf8(&buf[..bytes_read]).unwrap();
-                    match sx.send(message.to_string()).await {
+                    let m = match str::from_utf8(&buf[..bytes_read]) {
+                        Ok(m) => m.to_string(),
+                        Err(_e) => {
+                            decrypt(buf[..bytes_read].to_vec(), key)
+                        }
+                    };
+
+                    match sx.send(m).await {
                         Ok(_) => {}
                         Err(_e) => {
                             break;
@@ -87,17 +97,22 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
             ChatViewAction::None
         }
         ChatViewMessage::SendMessage(s) => {
+            let message = s.clone();
+            let s = format!("{} > {}", app_state.name, s.trim().to_string());
             if s.len() == 0 {
                 return ChatViewAction::None;
             }
             let mut tcp_stream = app_state.tcp_stream.try_clone().unwrap();
-            let s = s.trim().to_string();
-            tcp_stream.write_all(s.as_bytes()).unwrap();
+
+            let key = b"thisIsASecretKey";
+            let encrypted_message = encrypt(s.as_str(), key);
+
+            tcp_stream.write_all(encrypted_message.as_slice()).unwrap();
             {
                 app_state.messages.lock().unwrap().push(
                     app_state
                         .conversation_message_manager
-                        .format_conversation_message("You".to_string(), s),
+                        .format_conversation_message("You".to_string(), message),
                 );
             }
             app_state.current_message.clear();

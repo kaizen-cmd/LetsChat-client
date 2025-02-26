@@ -1,5 +1,6 @@
 mod chat;
 mod welcome;
+pub mod security;
 
 use std::net::TcpStream;
 
