@@ -6,6 +6,7 @@ use std::{
     sync::Arc,
 };
 
+use base64::Engine;
 use iced::{
     advanced::graphics::core::font,
     futures::{stream::FusedStream, SinkExt, Stream, StreamExt},
@@ -13,10 +14,10 @@ use iced::{
     widget::{button, column, container, row, scrollable, text, text_input, Column, Row},
     Alignment, Color, Element, Font, Length, Padding,
 };
-
 use std::sync::Mutex;
 
 use super::security::{decrypt, encrypt};
+
 pub struct ChatViewState {
     name: String,
     room_id: String,
@@ -33,7 +34,7 @@ impl ChatViewState {
         room_id: String,
         tcp_stream: TcpStream,
     ) -> Self {
-        messages.push(format!("\nYou have joined as {}", name).to_string());
+        messages.push(format!("ROOM_JOIN_SUCCESS_MESSAGE You have joined as {}", name).to_string());
         let mut cmm = ConversationMessageManager::new();
         let messages = cmm.cms_from_vec(messages);
         ChatViewState {
@@ -53,6 +54,7 @@ pub enum ChatViewMessage {
     ReceivedMessage(String),
     SendMessage(String),
     CurrentMessageChanged(String),
+    JoinVoiceChannel,
     Disconnect,
 }
 
@@ -67,17 +69,21 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
             println!("Message::StartReader received");
             let mut tcp_stream = app_state.tcp_stream.try_clone().unwrap();
             tokio::spawn(async move {
+                let key = b"thisIsASecretKey";
                 loop {
-                    let key = b"thisIsASecretKey";
                     let mut buf = [0u8; 1024];
-
                     let bytes_read = tcp_stream.read(&mut buf).unwrap();
-                    let m = match str::from_utf8(&buf[..bytes_read]) {
-                        Ok(m) => m.to_string(),
-                        Err(_e) => {
-                            decrypt(buf[..bytes_read].to_vec(), key)
-                        }
-                    };
+
+                    let mut m = str::from_utf8(&buf[..bytes_read]).unwrap().to_string();
+                    let split_message = m.split(' ').collect::<Vec<_>>();
+                    let type_of_message = split_message[0];
+
+                    if type_of_message == "NORMAL_MESSAGE" {
+                        let b64decoded_message = base64::prelude::BASE64_STANDARD
+                            .decode(split_message[1])
+                            .unwrap();
+                        m = format!("{} {}", split_message[0], decrypt(b64decoded_message, key));
+                    }
 
                     match sx.send(m).await {
                         Ok(_) => {}
@@ -107,7 +113,12 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
             let key = b"thisIsASecretKey";
             let encrypted_message = encrypt(s.as_str(), key);
 
-            tcp_stream.write_all(encrypted_message.as_slice()).unwrap();
+            // attach the type of the message
+            let encrypted_message_string =
+                base64::prelude::BASE64_STANDARD.encode(encrypted_message);
+            let final_message = format!("NORMAL_MESSAGE {}", encrypted_message_string);
+
+            tcp_stream.write_all(final_message.as_bytes()).unwrap();
             {
                 app_state.messages.lock().unwrap().push(
                     app_state
@@ -120,6 +131,11 @@ pub fn update(app_state: &mut ChatViewState, message: ChatViewMessage) -> ChatVi
         }
         ChatViewMessage::CurrentMessageChanged(s) => {
             app_state.current_message = s;
+            ChatViewAction::None
+        }
+        ChatViewMessage::JoinVoiceChannel => {
+            let mut tcp_stream = app_state.tcp_stream.try_clone().unwrap();
+            tcp_stream.write_all(format!("JOIN_VOICE_CHANNEL_MESSAGE {}", app_state.name).as_bytes()).unwrap();
             ChatViewAction::None
         }
         ChatViewMessage::Disconnect => {
@@ -224,11 +240,16 @@ pub fn view(app_state: &ChatViewState) -> Element<ChatViewMessage> {
         .height(Length::Shrink)
         .into();
 
+    let join_voice_btn: Element<ChatViewMessage> = button("Join Voice Chat")
+        .on_press(ChatViewMessage::JoinVoiceChannel)
+        .into();
+
     let disconnect_btn: Element<ChatViewMessage> = button("Disconnect Room")
         .on_press(ChatViewMessage::Disconnect)
         .into();
 
     column![
+        join_voice_btn,
         disconnect_btn,
         scrollable_messages,
         container(input_row).padding(10).width(Length::Fill)
@@ -323,7 +344,8 @@ impl ConversationMessageManager {
         }
     }
 
-    fn cm_from_string(&mut self, msg: String) -> ConversationMessage {
+    fn cm_from_string(&mut self, mut msg: String) -> ConversationMessage {
+        msg = msg.split(" ").collect::<Vec<_>>()[1..].join(" ");
         if msg.contains(">") {
             let split_msg = msg.split(">").collect::<Vec<&str>>();
             let name = split_msg[0].trim().to_string();

@@ -3,7 +3,7 @@ use std::net::TcpStream;
 
 use iced::advanced::graphics::core::font;
 use iced::widget::{button, column, container, text, text_input};
-use iced::{alignment, theme, Element, Font};
+use iced::{alignment, Element, Font};
 
 pub struct WelcomeViewState {
     welcome_message: String,
@@ -59,7 +59,7 @@ pub fn welcome_view_update(
         }
         WelcomeViewMessage::SbmitForm => {
             let message = format!(
-                "{} {}",
+                "JOIN_ROOM {} {}",
                 welcome_view_state.room_id_text, welcome_view_state.name_text
             );
             welcome_view_state
@@ -72,7 +72,7 @@ pub fn welcome_view_update(
             let message = std::str::from_utf8(&buf[..bytes_read]).unwrap();
             if message.contains("Room ID") {
                 return WelcomeViewAction::RoomJoined(
-                    message.to_string(),
+                    format!("ROOM_JOIN_SUCCESS_MESSAGE {}", message.to_string()),
                     welcome_view_state.name_text.to_string(),
                     welcome_view_state.room_id_text.to_string(),
                 );
